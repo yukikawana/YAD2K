@@ -1,15 +1,12 @@
 #! /usr/bin/env python
-u"""
+"""
 Reads Darknet19 config and weights and creates Keras model with TF backend.
 
 Currently only supports layers in Darknet19 config.
 """
 
-from __future__ import division
-from __future__ import with_statement
-from __future__ import absolute_import
 import argparse
-from configparser import ConfigParser
+import configparser
 import io
 import os
 from collections import defaultdict
@@ -27,7 +24,6 @@ from keras.utils.vis_utils import plot_model as plot
 
 from yad2k.models.keras_yolo import (space_to_depth_x2,
                                      space_to_depth_x2_output_shape)
-from io import open
 
 parser = argparse.ArgumentParser(
     description='Yet Another Darknet To Keras Converter.')
@@ -58,7 +54,7 @@ def unique_config_sections(config_file):
         for line in fin:
             if line.startswith('['):
                 section = line.strip().strip('[]')
-                _section = section + '_' + unicode(section_counters[section])
+                _section = section + '_' + str(section_counters[section])
                 section_counters[section] += 1
                 line = line.replace(section, _section)
             output_stream.write(line)
@@ -81,25 +77,23 @@ def _main(args):
     output_root = os.path.splitext(output_path)[0]
 
     # Load weights and config.
-    print 'Loading weights.'
+    print('Loading weights.')
     weights_file = open(weights_path, 'rb')
     weights_header = np.ndarray(
         shape=(4, ), dtype='int32', buffer=weights_file.read(16))
-    print 'Weights Header: ', weights_header
+    print('Weights Header: ', weights_header)
     # TODO: Check transpose flag when implementing fully connected layers.
     # transpose = (weight_header[0] > 1000) or (weight_header[1] > 1000)
 
-    print 'Parsing Darknet config.'
+    print('Parsing Darknet config.')
     unique_config_file = unique_config_sections(config_path)
-    print unique_config_file
-    cfg_parser = ConfigParser()
+    cfg_parser = configparser.ConfigParser()
     cfg_parser.read_file(unique_config_file)
 
-    print 'Creating Keras model.'
+    print('Creating Keras model.')
     if args.fully_convolutional:
         image_height, image_width = None, None
     else:
-        print cfg_parser.sections()
         image_height = int(cfg_parser['net_0']['height'])
         image_width = int(cfg_parser['net_0']['width'])
     prev_layer = Input(shape=(image_height, image_width, 3))
@@ -109,7 +103,7 @@ def _main(args):
                          ) if 'net_0' in cfg_parser.sections() else 5e-4
     count = 0
     for section in cfg_parser.sections():
-        print 'Parsing section {}'.format(section)
+        print('Parsing section {}'.format(section))
         if section.startswith('convolutional'):
             filters = int(cfg_parser[section]['filters'])
             size = int(cfg_parser[section]['size'])
@@ -131,7 +125,8 @@ def _main(args):
             darknet_w_shape = (filters, weights_shape[2], size, size)
             weights_size = np.product(weights_shape)
 
-            #print 'conv2d', 'bn',if batch_normalize else '  ', activation, weights_shape
+            print('conv2d', 'bn'
+                  if batch_normalize else '  ', activation, weights_shape)
 
             conv_bias = np.ndarray(
                 shape=(filters, ),
@@ -222,7 +217,7 @@ def _main(args):
             ids = [int(i) for i in cfg_parser[section]['layers'].split(',')]
             layers = [all_layers[i] for i in ids]
             if len(layers) > 1:
-                print 'Concatenating route layers:', layers
+                print('Concatenating route layers:', layers)
                 concatenate_layer = concatenate(layers)
                 all_layers.append(concatenate_layer)
                 prev_layer = concatenate_layer
@@ -243,10 +238,9 @@ def _main(args):
 
         elif section.startswith('region'):
             with open('{}_anchors.txt'.format(output_root), 'w') as f:
-                #print >>f, cfg_parser[section]['anchors']
-                f.write(cfg_parser[section]['anchors'])
+                print(cfg_parser[section]['anchors'], file=f)
 
-        elif (section.startswith('net_0') or section.startswith('cost') or
+        elif (section.startswith('net') or section.startswith('cost') or
               section.startswith('softmax')):
             pass  # Configs not currently handled during model definition.
 
@@ -256,20 +250,20 @@ def _main(args):
 
     # Create and save model.
     model = Model(inputs=all_layers[0], outputs=all_layers[-1])
-    print model.summary()
+    print(model.summary())
     model.save('{}'.format(output_path))
-    print 'Saved Keras model to {}'.format(output_path)
+    print('Saved Keras model to {}'.format(output_path))
     # Check to see if all weights have been read.
     remaining_weights = len(weights_file.read()) / 4
     weights_file.close()
-    print 'Read {} of {} from Darknet weights.'.format(count, count +
-                                                       remaining_weights)
+    print('Read {} of {} from Darknet weights.'.format(count, count +
+                                                       remaining_weights))
     if remaining_weights > 0:
-        print 'Warning: {} unused weights'.format(remaining_weights)
+        print('Warning: {} unused weights'.format(remaining_weights))
 
     if args.plot_model:
         plot(model, to_file='{}.png'.format(output_root), show_shapes=True)
-        print 'Saved model plot to {}.png'.format(output_root)
+        print('Saved model plot to {}.png'.format(output_root))
 
 
 if __name__ == '__main__':
